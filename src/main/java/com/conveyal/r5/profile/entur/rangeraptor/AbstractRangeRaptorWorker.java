@@ -8,6 +8,7 @@ import com.conveyal.r5.profile.entur.api.transit.TripPatternInfo;
 import com.conveyal.r5.profile.entur.api.transit.TripScheduleInfo;
 import com.conveyal.r5.profile.entur.api.view.Worker;
 import com.conveyal.r5.profile.entur.rangeraptor.debug.WorkerPerformanceTimers;
+import com.conveyal.r5.profile.entur.rangeraptor.multicriteria.McRangeRaptorWorkerState;
 import com.conveyal.r5.profile.entur.rangeraptor.transit.RoundTracker;
 import com.conveyal.r5.profile.entur.rangeraptor.transit.SearchContext;
 import com.conveyal.r5.profile.entur.rangeraptor.transit.TransitCalculator;
@@ -16,9 +17,12 @@ import com.conveyal.r5.profile.entur.rangeraptor.transit.TripScheduleSearch;
 import com.conveyal.r5.profile.entur.rangeraptor.workerlifecycle.LifeCycleEventPublisher;
 import com.conveyal.r5.profile.entur.util.AvgTimer;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 
 
 /**
@@ -50,6 +54,10 @@ import java.util.Iterator;
 @SuppressWarnings("Duplicates")
 public abstract class AbstractRangeRaptorWorker<T extends TripScheduleInfo, S extends WorkerState<T>> implements Worker<T> {
 
+    private static final AvgTimer STUFF1 = AvgTimer.timerMicroSec("AbRRW Stuff 1");
+    private static final AvgTimer STUFF2 = AvgTimer.timerMicroSec("AbRRW Stuff 2");
+    private static final AvgTimer STUFF3 = AvgTimer.timerMicroSec("AbRRW Stuff 3");
+
     /**
      * The RangeRaptor state - we delegate keeping track of state to the state object,
      * this allow the worker implementation to focus on the algorithm, while
@@ -70,7 +78,7 @@ public abstract class AbstractRangeRaptorWorker<T extends TripScheduleInfo, S ex
 
     private final TransitDataProvider<T> transit;
 
-    private final TransitCalculator calculator;
+    protected final TransitCalculator calculator;
 
     private final WorkerPerformanceTimers timers;
 
@@ -85,6 +93,8 @@ public abstract class AbstractRangeRaptorWorker<T extends TripScheduleInfo, S ex
      * listen.
      */
     private final LifeCycleEventPublisher lifeCycle;
+
+    boolean supportMultiThreads = false;
 
 
     public AbstractRangeRaptorWorker(
@@ -102,6 +112,8 @@ public abstract class AbstractRangeRaptorWorker<T extends TripScheduleInfo, S ex
         this.stopsFilter =  context.searchParams().stopFilter();
         this.lifeCycle = context.createLifeCyclePublisher();
         this.matchBoardingAlightExactInFirstRound = !context.searchParams().waitAtBeginningEnabled();
+
+        supportMultiThreads = context.isMultiThreaded() && (state instanceof McRangeRaptorWorkerState);
     }
 
     /**
@@ -161,7 +173,7 @@ public abstract class AbstractRangeRaptorWorker<T extends TripScheduleInfo, S ex
      * <p/>
      * This is protected to allow reverse search to override and create a alight search instead.
      */
-    private TripScheduleSearch<T> createTripSearch(TripPatternInfo<T> pattern) {
+    protected TripScheduleSearch<T> createTripSearch(TripPatternInfo<T> pattern) {
         if(matchBoardingAlightExactInFirstRound && roundTracker.round() == 1) {
             return calculator.createExactTripSearch(pattern, this::skipTripSchedule);
         }
@@ -192,7 +204,12 @@ public abstract class AbstractRangeRaptorWorker<T extends TripScheduleInfo, S ex
 
             // NB since we have transfer limiting not bothering to cut off search when there are no more transfers
             // as that will be rare and complicates the code
-            timerByMinuteScheduleSearch().time(this::findAllTransitForRound);
+            if(supportMultiThreads) {
+                timerByMinuteScheduleSearch().time(this::findAllTransitForRoundMT);
+            }
+            else {
+                timerByMinuteScheduleSearch().time(this::findAllTransitForRound);
+            }
 
             timerByMinuteTransfers().time(this::transfersForRound);
 
@@ -241,6 +258,37 @@ public abstract class AbstractRangeRaptorWorker<T extends TripScheduleInfo, S ex
             performTransitForRoundAndEachStopInPattern(pattern);
         }
         lifeCycle.transitsForRoundComplete();
+    }
+
+    private void findAllTransitForRoundMT() {
+        STUFF1.start();
+
+        IntIterator stops = state.stopsTouchedPreviousRound();
+        Iterator<? extends TripPatternInfo<T>> patternIterator = transit.patternIterator(stops);
+        List<List<TripPatternInfo<T>>> patterns = new ArrayList<>(
+                Arrays.asList(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>())
+        );
+
+
+        int i = 0;
+
+        while (patternIterator.hasNext()) {
+            patterns.get(i).add(patternIterator.next());
+            i = i==3 ? 0 : i+1;
+        }
+        STUFF1.stop();
+        STUFF2.start();
+        performTransitMultiThreaded(patterns);
+        STUFF2.stop();
+
+
+        STUFF3.start();
+        lifeCycle.transitsForRoundComplete();
+        STUFF3.stop();
+    }
+
+    protected void performTransitMultiThreaded(List<List<TripPatternInfo<T>>> patterns) {
+
     }
 
 

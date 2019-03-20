@@ -14,11 +14,15 @@ import com.conveyal.r5.profile.entur.rangeraptor.multicriteria.heuristic.Heurist
 import com.conveyal.r5.profile.entur.rangeraptor.path.DestinationArrivalPaths;
 import com.conveyal.r5.profile.entur.rangeraptor.transit.CostCalculator;
 import com.conveyal.r5.profile.entur.rangeraptor.transit.TransitCalculator;
+import com.conveyal.r5.profile.entur.util.AvgTimer;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 
 
 /**
@@ -36,9 +40,19 @@ final public class McRangeRaptorWorkerState<T extends TripScheduleInfo> implemen
     private final Stops<T> stops;
     private final DestinationArrivalPaths<T> paths;
     private final HeuristicsProvider<T> heuristics;
-    private final List<AbstractStopArrival<T>> arrivalsCache = new ArrayList<>();
     private final CostCalculator costCalculator;
     private final TransitCalculator transitCalculator;
+
+    private final ExecutorService threadPool;
+
+    private final List<List<AbstractStopArrival<T>>> arrivalsCaches = new ArrayList<>(
+            Arrays.asList(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>())
+    );
+    private final List<List<AbstractStopArrival<T>>> arrivalsTemps = new ArrayList<>(
+            Arrays.asList(new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>())
+    );
+
+
 
     /**
      * create a RaptorState for a network with a particular number of stops, and a given maximum duration
@@ -49,6 +63,7 @@ final public class McRangeRaptorWorkerState<T extends TripScheduleInfo> implemen
             HeuristicsProvider<T> heuristics,
             CostCalculator costCalculator,
             TransitCalculator transitCalculator,
+            ExecutorService threadPool,
             WorkerLifeCycle lifeCycle
 
     ) {
@@ -57,6 +72,7 @@ final public class McRangeRaptorWorkerState<T extends TripScheduleInfo> implemen
         this.heuristics = heuristics;
         this.costCalculator = costCalculator;
         this.transitCalculator = transitCalculator;
+        this.threadPool = threadPool;
 
         // Attach to the RR life cycle
         lifeCycle.onSetupIteration((ignore) -> setupIteration());
@@ -71,7 +87,7 @@ final public class McRangeRaptorWorkerState<T extends TripScheduleInfo> implemen
 
     // This method is private, but is part of Worker life cycle
     private void setupIteration() {
-        arrivalsCache.clear();
+        arrivalsCaches.forEach(List::clear);
         // clear all touched stops to avoid constant rexploration
         stops.clearTouchedStopsAndSetStopMarkers();
     }
@@ -111,13 +127,13 @@ final public class McRangeRaptorWorkerState<T extends TripScheduleInfo> implemen
     /**
      * Set the time at a transit stop iff it is optimal.
      */
-    void transitToStop(AbstractStopArrival<T> previousStopArrival, int stop, int alightTime, int boardTime, T trip) {
+    void transitToStop(AbstractStopArrival<T> previousStopArrival, int stop, int alightTime, int boardTime, T trip, int thread) {
         if (exceedsTimeLimit(alightTime)) {
             return;
         }
         int cost = costCalculator.transitArrivalCost(previousStopArrival.arrivalTime(), boardTime, alightTime);
         int duration = travelDuration(previousStopArrival, boardTime, alightTime);
-        arrivalsCache.add(new TransitStopArrival<>(previousStopArrival, stop, alightTime, boardTime, trip, duration, cost));
+        arrivalsCaches.get(thread).add(new TransitStopArrival<>(previousStopArrival, stop, alightTime, boardTime, trip, duration, cost));
     }
 
     /**
@@ -132,10 +148,17 @@ final public class McRangeRaptorWorkerState<T extends TripScheduleInfo> implemen
         }
     }
 
+    private static final AvgTimer TIMER_1 = AvgTimer.timerMicroSec("McS:stops.clearTouchedStopsAndSetStopMarkers");
+    private static final AvgTimer TIMER_2 = AvgTimer.timerMicroSec("McS:commitCachedArrivals");
+
     // This method is private, but is part of Worker life cycle
     private void transitsForRoundComplete() {
+        TIMER_1.start();
         stops.clearTouchedStopsAndSetStopMarkers();
+        TIMER_1.stop();
+        TIMER_2.start();
         commitCachedArrivals();
+        TIMER_2.stop();
     }
 
     // This method is private, but is part of Worker life cycle
@@ -166,16 +189,49 @@ final public class McRangeRaptorWorkerState<T extends TripScheduleInfo> implemen
 
             if (!exceedsTimeLimit(arrivalTime)) {
                 int cost = costCalculator.walkCost(transferTimeInSeconds);
-                arrivalsCache.add(new TransferStopArrival<>(it, transfer, arrivalTime, cost));
+                arrivalsCaches.get(0).add(new TransferStopArrival<>(it, transfer, arrivalTime, cost));
             }
         }
     }
 
     private void commitCachedArrivals() {
-        for (AbstractStopArrival<T> arrival : arrivalsCache) {
-            addStopArrival(arrival);
+        if(threadPool == null) {
+            arrivalsCaches.forEach(c -> c.forEach(stops::addStopArrival));
         }
-        arrivalsCache.clear();
+        else {
+            arrivalsCaches.forEach(c -> c.forEach(it -> arrivalsTemps.get(it.stop() % 4).add(it)));
+
+            List<Future<?>> res = new ArrayList<>();
+            for (List<AbstractStopArrival<T>> it : arrivalsTemps) {
+                if(!it.isEmpty()) {
+                    res.add(threadPool.submit(addArrivals(it)));
+                }
+            }
+            res.forEach(it -> {
+                try {
+                    if(it != null) {
+                        it.get();
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+            arrivalsTemps.forEach(List::clear);
+        }
+        arrivalsCaches.forEach(List::clear);
+    }
+
+    private Runnable addArrivals(List<AbstractStopArrival<T>> list) {
+        return () -> {
+            try {
+                for (AbstractStopArrival<T> arrival : list) {
+                    stops.addStopArrival(arrival);
+                }
+            }
+            catch (Exception e) {
+                e.printStackTrace();
+            }
+        };
     }
 
     private void addStopArrival(AbstractStopArrival<T> arrival) {

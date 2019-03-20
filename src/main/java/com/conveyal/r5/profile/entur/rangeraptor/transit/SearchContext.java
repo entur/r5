@@ -18,6 +18,7 @@ import com.conveyal.r5.profile.entur.rangeraptor.workerlifecycle.LifeCycleBuilde
 import com.conveyal.r5.profile.entur.rangeraptor.workerlifecycle.LifeCycleEventPublisher;
 
 import java.util.Collection;
+import java.util.concurrent.ExecutorService;
 
 /**
  * The seach context is used to hold search scoped instances and to pass these
@@ -41,6 +42,7 @@ public class SearchContext<T extends TripScheduleInfo> {
     private final TuningParameters tuningParameters;
     private final RoundTracker roundTracker;
     private final WorkerPerformanceTimers timers;
+    private final ExecutorService threadPool;
     private final DebugRequest<T> debugRequest;
     private final DebugHandlerFactory<T> debugFactory;
 
@@ -50,6 +52,7 @@ public class SearchContext<T extends TripScheduleInfo> {
             RangeRaptorRequest<T> request,
             TuningParameters tuningParameters,
             TransitDataProvider<T> transit,
+            ExecutorService threadPool,
             WorkerPerformanceTimers timers
     ) {
         this.request = request;
@@ -57,18 +60,19 @@ public class SearchContext<T extends TripScheduleInfo> {
         this.transit = transit;
         // Note that it is the "new" request that is passed in.
         this.calculator = createCalculator(this.request, tuningParameters);
-        this.roundTracker = new RoundTracker(nRounds(), request.searchParams().numberOfAdditionalTransfers(), lifeCycle());
+        this.roundTracker = new RoundTracker(nRounds(), searchParams().numberOfAdditionalTransfers(), lifeCycle());
         this.timers = timers;
+        this.threadPool = threadPool;
         this.debugRequest = debugRequest(request);
         this.debugFactory = new DebugHandlerFactory<>(this.debugRequest, lifeCycle());
     }
 
     public Collection<TransferLeg> accessLegs() {
-        return request.searchForward() ? request.searchParams().accessLegs() : request.searchParams().egressLegs();
+        return request.searchForward() ? searchParams().accessLegs() : searchParams().egressLegs();
     }
 
     public Collection<TransferLeg> egressLegs() {
-        return request.searchForward() ? request.searchParams().egressLegs() : request.searchParams().accessLegs();
+        return request.searchForward() ? searchParams().egressLegs() : searchParams().accessLegs();
     }
 
     public int[] egressStops() {
@@ -107,6 +111,14 @@ public class SearchContext<T extends TripScheduleInfo> {
 
     public WorkerPerformanceTimers timers() {
         return timers;
+    }
+
+    public boolean isMultiThreaded() {
+        return threadPool != null;
+    }
+
+    public ExecutorService threadPool() {
+        return threadPool;
     }
 
     public DebugHandlerFactory<T> debugFactory() {

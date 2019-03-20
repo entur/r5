@@ -38,7 +38,7 @@ public class RangeRaptorConfig<T extends TripScheduleInfo> {
     }
 
     public SearchContext<T> context(TransitDataProvider<T> transit, RangeRaptorRequest<T> request) {
-        return new SearchContext<>(request, tuningParameters, transit, timers.get(request));
+        return new SearchContext<>(request, tuningParameters, transit, threadPool, timers.get(request));
     }
 
     public Worker<T> createStdWorker(TransitDataProvider<T> transitData, RangeRaptorRequest<T> request) {
@@ -91,5 +91,4 @@ public class RangeRaptorConfig<T extends TripScheduleInfo> {
     private ExecutorService createNewThreadPool(int size) {
         return size > 0 ? Executors.newFixedThreadPool(size) : null;
     }
-
 }

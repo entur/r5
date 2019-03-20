@@ -49,7 +49,7 @@ class RequestSupport {
 
         @Override
         public int searchThreadPoolSize() {
-            return 0;
+            return 4;
         }
     };
 

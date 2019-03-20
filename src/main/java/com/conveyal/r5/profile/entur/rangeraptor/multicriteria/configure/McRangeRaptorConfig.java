@@ -43,6 +43,7 @@ public class McRangeRaptorConfig<T extends TripScheduleInfo> {
                 createHeuristicsProvider(heuristics),
                 context.costCalculator(),
                 context.calculator(),
+                context.threadPool(),
                 context.lifeCycle()
         );
     }
