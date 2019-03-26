@@ -1,5 +1,6 @@
 package com.conveyal.r5.speed_test.cli;
 
+import com.conveyal.r5.speed_test.SpeedTestProfile;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -62,6 +63,7 @@ public class CommandLineOpts {
     Options speedTestOptions() {
         Options options = new Options();
         options.addOption(ROOT_DIR, "dir", true, "The directory where network and input files are located. (Optional)");
+        options.addOption(PROFILES, "profiles", true, "A coma separated list of configuration profiles:\n" + String.join("\n", SpeedTestProfile.options()));
         options.addOption(HELP, "help", false, "Print all command line options, then exit. (Optional)");
         options.addOption(DEBUG_STOPS, "debugStops", true, "A coma separated list of stops to debug.");
         options.addOption(DEBUG_PATH, "debugPath", true, "A coma separated list of stops representing a trip/path to debug. " +
@@ -78,6 +80,10 @@ public class CommandLineOpts {
             throw new IllegalArgumentException("Unable to find root directory: " + rootDir.getAbsolutePath());
         }
         return rootDir;
+    }
+
+    public SpeedTestProfile defaultProfile() {
+        return cmd.hasOption(PROFILES) ? SpeedTestProfile.parse(cmd.getOptionValue(PROFILES))[0] : SpeedTestProfile.mc_range_raptor;
     }
 
     public boolean debug() {

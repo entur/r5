@@ -62,7 +62,9 @@ public class SpeedTest {
 
     SpeedTest(CommandLineOpts opts) throws Exception {
         this.opts = opts;
+        this.routeProfile = opts.defaultProfile();
         initTransportNetwork();
+        service = new RangeRaptorService<>(RequestSupport.TUNING_PARAMETERS);
     }
 
     public static void main(String[] args) throws Exception {
@@ -84,7 +86,6 @@ public class SpeedTest {
         final SpeedTestProfile[] speedTestProfiles = opts.profiles();
         final int nSamples = opts.numberOfTestsSamplesToRun();
         nAdditionalTransfers = opts.numOfExtraTransfers();
-        service = new RangeRaptorService<>(RequestSupport.TUNING_PARAMETERS);
         boolean skipFirstProfile;
 
         initProfileStatistics();
