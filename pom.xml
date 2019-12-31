@@ -34,7 +34,7 @@
         </developer>
         <developer>
             <name>Marko Burjek</name>
-            <email></email>
+            <email/>
             <organization>Kodanta</organization>
         </developer>
     </developers>
@@ -160,8 +160,7 @@
                                  into a Maven repo directory by version number. -->
                             <finalName>${git.commit.id.describe}</finalName>
                             <transformers>
-                                <transformer
-                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <manifestEntries>
                                         <Main-Class>com.conveyal.r5.R5Main</Main-Class>
                                         <!-- The ImageIO lines allow some image reader plugins to work see https://stackoverflow.com/questions/7051603/jai-vendorname-null#18495658 -->
@@ -176,8 +175,7 @@
                                 </transformer>
                                 <!-- files overwrite each other and geotools does not function without this.
                                      http://docs.geotools.org/latest/userguide/faq.html#how-do-i-create-an-executable-jar-for-my-geotools-app -->
-                                <transformer
-                                        implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
                             <!-- signature files from included jars cause problems: http://stackoverflow.com/questions/999489 -->
                             <filters>
@@ -384,7 +382,7 @@
         <dependency>
             <groupId>com.conveyal</groupId>
             <artifactId>gtfs-lib</artifactId>
-            <version>3.0.7</version>
+            <version>3.0.8</version>
         </dependency>
         <!-- Conveyal library for loading and storing OSM road data. -->
         <dependency>
